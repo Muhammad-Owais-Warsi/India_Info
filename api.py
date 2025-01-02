@@ -148,12 +148,18 @@ def add_member():
         return jsonify({'success': False, 'message': str(e)}), 400
 
 if __name__ == '__main__':
-    # Print some debug information
+    import os
+    
+    # Render automatically sets the PORT environment variable.
+    # If PORT is not set, default to 5000 (for local testing).
+    port = int(os.environ.get('PORT', 5000))
+    
     print(f"Total records loaded: {len(df)}")
     print(f"Unique states: {df['state'].nunique()}")
     print(f"Unique districts: {df['district'].nunique()}")
-    print(f"Sample data:")
+    print("Sample data:")
     print(df.head())
     
-    # Run the app
-    app.run(debug=True)
+    # Run the app on 0.0.0.0, so it's externally accessible,
+    # and use the dynamic port for Render.
+    app.run(host='0.0.0.0', port=port, debug=True)
