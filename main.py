@@ -15,7 +15,7 @@ MAX_WORKERS = 50
 
 # API Endpoints
 URL_STATES = f"https://egramswaraj.gov.in/ElectedStateReport.do?year={YEAR}"
-URL_DISTRICTS = "https://egramswaraj.gov.in/ElectedZpReport.do?stateId={state_id}&year={year}"
+URL_DISTRICTS = "https://egramswaraj.gov.in/ElectedZpReport.do?stateId=29&year=2024-2025"
 URL_BLOCKS = "https://egramswaraj.gov.in/ElectedBpReport.do?stateId={state_id}&code={district_code}&year={year}"
 URL_GRAMPANCHAYATS = "https://egramswaraj.gov.in/ElectedGpReport.do?stateId={state_id}&code={block_code}&year={year}"
 URL_MEMBERS = "https://egramswaraj.gov.in/ElectedMemberRepresent.do?code={gp_code}"

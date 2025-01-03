@@ -1,169 +1,169 @@
 from flask import Flask, jsonify, request, render_template
+import psycopg2
 import pandas as pd
+from psycopg2.extras import execute_values
 from typing import Dict, List
 import json
 
+# Database connection parameters
+DB_PARAMS = {
+    "user": "postgres.wrzghifymvmmflemjpnd",
+    "password": "Achiadi123",
+    "host": "aws-0-ap-southeast-1.pooler.supabase.com",
+    "port": "6543",
+    "dbname": "postgres"
+}
+
 app = Flask(__name__)
 
-# Global DataFrame
-df = None
+# Helper function to connect to the database
+def get_db_connection():
+    return psycopg2.connect(**DB_PARAMS)
 
-# Load and prepare data
-def load_data() -> pd.DataFrame:
-    try:
-        df = pd.read_csv(
-            "panchayat_data_with_members.csv",
-            on_bad_lines="skip",
-            header=0
-        )
-        df.columns = [
-            "state_code",
-            "state",
-            "district_code",
-            "district",
-            "taluk_code",
-            "taluk",
-            "village_code",
-            "village",
-            "member_id",
-            "name",
-            "phone",
-            "email",
-            "role",
-        ]
-        code_columns = ["state_code", "district_code", "taluk_code", "village_code"]
-        for col in code_columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df.dropna(subset=code_columns)
-        for col in code_columns:
-            df[col] = df[col].astype(int)
-        return df
-    except Exception as e:
-        print(f"Error loading data: {str(e)}")
-        return pd.DataFrame(
-            columns=[
-                "state_code",
-                "state",
-                "district_code",
-                "district",
-                "taluk_code",
-                "taluk",
-                "village_code",
-                "village",
-                "member_id",
-                "name",
-                "phone",
-                "email",
-                "role",
-            ]
-        )
-
-df = load_data()
-
-# Main route to serve the HTML
 @app.route("/")
 def index():
     return render_template("index.html")
 
 @app.route("/api/states", methods=["GET"])
 def get_states():
-    states = df[["state_code", "state"]].drop_duplicates().to_dict("records")
-    return jsonify(states)
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT DISTINCT state_code, state_name FROM panchayat_members;")
+        states = [dict(state_code=row[0], state=row[1]) for row in cursor.fetchall()]
+        return jsonify(states)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
 @app.route("/api/districts/<state_code>", methods=["GET"])
 def get_districts(state_code):
     try:
-        state_code = int(state_code)
-        districts = (
-            df[df["state_code"] == state_code][["district_code", "district"]]
-            .drop_duplicates()
-            .to_dict("records")
-        )
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT DISTINCT district_code, district_name FROM panchayat_members WHERE state_code = %s;", (state_code,))
+        districts = [dict(district_code=row[0], district=row[1]) for row in cursor.fetchall()]
         return jsonify(districts)
-    except:
-        return jsonify([])
+    except Exception as e:
+        return jsonify({"error": str(e)})
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
 @app.route("/api/taluks/<district_code>", methods=["GET"])
 def get_taluks(district_code):
     try:
-        district_code = int(district_code)
-        taluks = (
-            df[df["district_code"] == district_code][["taluk_code", "taluk"]]
-            .drop_duplicates()
-            .to_dict("records")
-        )
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT DISTINCT block_code, block_name FROM panchayat_members WHERE district_code = %s;", (district_code,))
+        taluks = [dict(taluk_code=row[0], taluk=row[1]) for row in cursor.fetchall()]
         return jsonify(taluks)
-    except:
-        return jsonify([])
+    except Exception as e:
+        return jsonify({"error": str(e)})
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
 @app.route("/api/villages/<taluk_code>", methods=["GET"])
 def get_villages(taluk_code):
     try:
-        taluk_code = int(taluk_code)
-        villages = (
-            df[df["taluk_code"] == taluk_code][["village_code", "village"]]
-            .drop_duplicates()
-            .to_dict("records")
-        )
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT DISTINCT gram_panchayat_code, gram_panchayat_name FROM panchayat_members WHERE block_code = %s;", (taluk_code,))
+        villages = [dict(village_code=row[0], village=row[1]) for row in cursor.fetchall()]
         return jsonify(villages)
-    except:
-        return jsonify([])
+    except Exception as e:
+        return jsonify({"error": str(e)})
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
 @app.route("/api/members", methods=["GET"])
 def get_members():
     try:
-        filters = {}
-        if request.args.get("village_code"):
-            filters["village_code"] = int(request.args.get("village_code"))
-        filtered_df = df
-        for key, value in filters.items():
-            filtered_df = filtered_df[filtered_df[key] == value]
-        members = filtered_df[
-            [
-                "name",
-                "role",
-                "phone",
-                "email",
-                "village",
-                "taluk",
-                "district",
-                "state",
-            ]
-        ].to_dict("records")
+        village_code = request.args.get("village_code")
+        connection = get_db_connection()
+        cursor = connection.cursor()
+
+        if village_code:
+            query = """
+SELECT elected_name AS name, designation_name, mobile_number, email_id, 
+       gram_panchayat_name, block_name, district_name, state_name 
+FROM panchayat_members 
+WHERE gram_panchayat_code = %s;
+"""
+            cursor.execute(query, (village_code,))
+        else:
+            query = """
+            SELECT name, designation_name, mobile_number, email_id, gram_panchayat_name, block_name, district_name, state_name 
+            FROM panchayat_members;
+            """
+            cursor.execute(query)
+
+        members = [
+            dict(
+                name=row[0],
+                role=row[1],
+                phone=row[2],
+                email=row[3],
+                village=row[4],
+                taluk=row[5],
+                district=row[6],
+                state=row[7]
+            ) for row in cursor.fetchall()
+        ]
         return jsonify(members)
     except Exception as e:
-        print(f"Error in get_members: {str(e)}")
-        return jsonify([])
+        return jsonify({"error": str(e)})
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
 @app.route("/api/members/add", methods=["POST"])
 def add_member():
-    global df
     try:
         data = request.json
-        village_data = df[df["village_code"] == int(data["village_code"])].iloc[0]
-        new_member = {
-            "state_code": village_data["state_code"],
-            "state": village_data["state"],
-            "district_code": village_data["district_code"],
-            "district": village_data["district"],
-            "taluk_code": village_data["taluk_code"],
-            "taluk": village_data["taluk"],
-            "village_code": int(data["village_code"]),
-            "village": village_data["village"],
-            "member_id": df["member_id"].max() + 1,
-            "name": data["name"],
-            "phone": data["phone"],
-            "email": data["email"],
-            "role": data["role"],
-        }
-        df = pd.concat([df, pd.DataFrame([new_member])], ignore_index=True)
-        df.to_csv("panchayat_data_with_members.csv", index=False)
+        connection = get_db_connection()
+        cursor = connection.cursor()
+
+        # Check if village exists
+        cursor.execute("SELECT * FROM panchayat_members WHERE gram_panchayat_code = %s LIMIT 1;", (data["village_code"],))
+        village_data = cursor.fetchone()
+        if not village_data:
+            return jsonify({"success": False, "message": "Invalid village code."}), 400
+
+        # Insert new member
+        insert_query = """
+        INSERT INTO panchayat_members (
+            state_code, state_name, district_code, district_name, 
+            block_code, block_name, gram_panchayat_code, gram_panchayat_name, 
+            name, mobile_number, email_id, designation_name
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        cursor.execute(
+            insert_query,
+            (
+                village_data[1], village_data[2], village_data[3], village_data[4],
+                village_data[5], village_data[6], village_data[7], village_data[8],
+                data["name"], data["phone"], data["email"], data["role"]
+            )
+        )
+        connection.commit()
         return jsonify({"success": True, "message": "Member added successfully"})
     except Exception as e:
-        print(f"Error adding member: {str(e)}")
         return jsonify({"success": False, "message": str(e)}), 400
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
-# Updated global search route to handle state/district/taluk/village
 @app.route("/api/search")
 def search():
     search_term = request.args.get("term", "").lower()
@@ -171,55 +171,38 @@ def search():
         return jsonify({"results": []})
 
     try:
-        # Use the global df (already loaded) instead of reading CSV again
-        mask = (
-            df["state"].str.lower().str.contains(search_term, na=False)
-            | df["district"].str.lower().str.contains(search_term, na=False)
-            | df["taluk"].str.lower().str.contains(search_term, na=False)
-            | df["village"].str.lower().str.contains(search_term, na=False)
-        )
-        results = (
-            df[mask][
-                [
-                    "state_code",
-                    "state",
-                    "district_code",
-                    "district",
-                    "taluk_code",
-                    "taluk",
-                    "village_code",
-                    "village",
-                ]
-            ]
-            .drop_duplicates()
-            .head(10)
-        )
-        results_list = []
-        for _, row in results.iterrows():
-            results_list.append(
-                {
-                    "state_code": row["state_code"],
-                    "state": row["state"],
-                    "district_code": row["district_code"],
-                    "district": row["district"],
-                    "taluk_code": row["taluk_code"],
-                    "taluk": row["taluk"],
-                    "village_code": row["village_code"],
-                    "village": row["village"],
-                }
-            )
-        return jsonify({"results": results_list})
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        query = """
+        SELECT DISTINCT state_code, state_name, district_code, district_name, block_code, block_name, gram_panchayat_code, gram_panchayat_name
+        FROM panchayat_members
+        WHERE LOWER(state_name) LIKE %s OR LOWER(district_name) LIKE %s 
+        OR LOWER(block_name) LIKE %s OR LOWER(gram_panchayat_name) LIKE %s
+        LIMIT 10;
+        """
+        cursor.execute(query, tuple([f"%{search_term}%"] * 4))
+        results = [
+            dict(
+                state_code=row[0],
+                state=row[1],
+                district_code=row[2],
+                district=row[3],
+                taluk_code=row[4],
+                taluk=row[5],
+                village_code=row[6],
+                village=row[7]
+            ) for row in cursor.fetchall()
+        ]
+        return jsonify({"results": results})
     except Exception as e:
-        print(f"Error in search: {str(e)}")
         return jsonify({"results": [], "error": str(e)}), 500
+    finally:
+        if 'connection' in locals():
+            cursor.close()
+            connection.close()
 
 if __name__ == "__main__":
     import os
 
     port = int(os.environ.get("PORT", 5000))
-    print(f"Total records loaded: {len(df)}")
-    print(f"Unique states: {df['state'].nunique()}")
-    print(f"Unique districts: {df['district'].nunique()}")
-    print("Sample data:")
-    print(df.head())
     app.run(host="0.0.0.0", port=port, debug=True)
