@@ -5,6 +5,7 @@ import logging
 import requests
 import concurrent.futures
 
+
 # ------------------- CONFIGURATION -------------------
 YEAR = "2024-2025"
 OUTPUT_CSV = "panchayat_data_with_members11.csv"
